@@ -4,10 +4,9 @@ import matplotlib.pyplot as plt
 
 # Finds stars which are members of the named cluster. This data is from 2000.
 def cluster_list(name,save=False):
-    colnames=['region', 'desig', 'ra', 'dec', 'flag', 'ME', 'J', 'H', 'alpha_IRAC', 'logL_X', 'Age_JX', 'Clus'] 
-    data = pd.read_csv('Getman2018.txt',delimiter='\s+&\+*', header=None, names=colnames, engine='python')
+    colnames=['region', 'desig', 'mem_ra', 'mem_dec', 'flag', 'ME', 'J', 'H', 'alpha_IRAC', 'logL_X', 'Age_JX', 'Clus'] 
+    data = pd.read_csv('Cluster_Memberships.txt',delimiter='\s+&\+*', header=None, names=colnames, engine='python')
     selected_cluster = data[data['region'] == name]
-    assert(len(selected_cluster) == 396)
     if save==True:
         selected_cluster.to_csv('%s_Member_List.csv'%name)
     return selected_cluster
@@ -15,10 +14,10 @@ def cluster_list(name,save=False):
 
 # Find the dimensions of a rectangle containing all stars described in the input database
 def find_dimensions(stars):
-    max_RA = stars['ra'].max()
-    min_RA = stars['ra'].min()
-    max_Dec = stars['dec'].max()
-    min_Dec = stars['dec'].min()
+    max_RA = stars['mem_ra'].max()
+    min_RA = stars['mem_ra'].min()
+    max_Dec = stars['mem_dec'].max()
+    min_Dec = stars['mem_dec'].min()
     return min_RA, max_RA, min_Dec, max_Dec
 
 
@@ -27,15 +26,12 @@ def circle_around_stars(stars):
     min_RA, max_RA, min_Dec, max_Dec = find_dimensions(stars)
     RA, Dec = np.mean([min_RA,max_RA]),np.mean([min_Dec, max_Dec])
     radius = np.linalg.norm([(max_RA - min_RA)/2, (max_Dec - min_Dec)/2])
+    radius=radius
     return RA, Dec,radius
 
 
 # Finds the Gaia data from 2015.5 for sources in the region of a cluster
 def gaia_data_current(stars,show=False):
-    import astropy.units as u
-    from astropy.coordinates.sky_coordinate import SkyCoord
-    from astropy.units import Quantity
-    from astroquery.gaia import Gaia
     from astroquery.gaia import Gaia
     import warnings
     warnings.filterwarnings('ignore')
@@ -53,6 +49,9 @@ WHERE CONTAINS(POINT('ICRS',gaiadr2.gaia_source.ra,gaiadr2.gaia_source.dec),CIRC
 
 # Finds the Gaia data from 2015.5 and projected 2000 data for sources in the region of a cluster
 def gaia_data_projected(stars):
+    import astropy.units as u
+    from astropy.coordinates.sky_coordinate import SkyCoord
+    from astropy.units import Quantity
     from astroquery.gaia import Gaia
     import warnings
     warnings.filterwarnings('ignore')
@@ -91,13 +90,77 @@ def find_gaia_region(cluster_name,save_member_list = False,save_gaia_region=Fals
     return stars,gaia_stars
 
 
-# Find matches between stars in Gaia data and membership lists and the distances between them 
-def distances_from_match(cluster_name):
+# For data sets in the form of arrays finds nearest neighbors
+# Returns the indices of the neighbors of the first data set in the second and distances between neighbors
+def indices_of_nearest_neighbors_arrays(set_1,set_2,num_neighbors=1):
+    from sklearn.neighbors import NearestNeighbors
+
+    (w,x)=set_1.shape
+    (y,z)=set_2.shape   
+    X = set_2
+    Y = set_1
+    a = w
+        
+    k_neighbors = num_neighbors+1
+    neighbor_index = np.zeros((a,num_neighbors))
+    distances = np.zeros((a,num_neighbors))
+    for i in range(a):
+        row = np.copy(Y[i].reshape((1,2)))
+        Z = np.concatenate((row,X),axis=0)
+        nbrs = NearestNeighbors(n_neighbors=k_neighbors, algorithm='ball_tree').fit(Z)
+        dist, indices = nbrs.kneighbors(Z)
+        neighbor_index[i] = np.copy(indices[0,1:]-np.ones_like(indices[0,1:]))
+        distances[i] = np.copy(dist[0,1:])     
+    return neighbor_index,distances
+
+
+# Find matches between stars in Gaia data and membership lists and the distances between them
+# Output a dataframe with the data from the membership list followed by that of the Gaia counterparts and distances between them
+def distances_from_match(cluster_name,num_matches=1,save=False):
     stars,gaia_stars = find_gaia_region(cluster_name)
-    stars_coord = stars[['ra','dec']].values
-    gaia_stars_coord = np.array([gaia_stars['ra_2000'],gaia_stars['dec_2000']]).T    
+    gaia_stars_df = pd.DataFrame(np.array(gaia_stars))
+    stars_coord = stars[['mem_ra','mem_dec']].values
+    gaia_stars_coord = np.array([gaia_stars['ra_2000'],gaia_stars['dec_2000']]).T     
+    neighbor_index,distances = indices_of_nearest_neighbors_arrays(stars_coord,gaia_stars_coord,num_neighbors=num_matches)    
+    stars.reset_index(inplace=True,drop=True)
+    
+    for i in range(num_matches):
+        temp = gaia_stars_df.reindex(neighbor_index[:,i])
+        temp['distance %s'%(i+1)] = distances[:,i]
+        temp.reset_index(inplace=True,drop=True)
+        stars = pd.concat([stars,temp],axis=1)
+        
+    if save==True:
+        stars.to_csv('%s_counterparts.csv'%cluster_name)       
+    return stars
+   
+    
+# Remove rows with matches of less than a certain angular displacement in arcseconds
+def tidy_counterparts(cluster_name,max_dist=1,num=1,save=False):
+    max_dist=max_dist/(60*60)
+    stars=distances_from_match(cluster_name,num_matches=num)
+    (a,b)=stars.shape    
+    empty_parallax = stars['parallax'].isnull()
+
+    for i in range(a):
+        if (stars.at[i,'distance 1']>max_dist) or (empty_parallax[i]==True):
+            stars.drop([i],inplace=True)
+    # Some issue here with matching the source index??
+    '''
+        for j in range(a):
+            if j!=i:
+                if stars.at[i,'source_id']==stars.at[j,'source_id']:
+                    if stars.at[i,'distance 1']<stars.at[j,'distance 1']:
+                        stars.drop([j],inplace=True)
+                    else:
+                        stars.drop([i],inplace=True)
+    '''       
+    stars.reset_index(inplace=True,drop=True)    
+    if save==True:
+        stars.to_csv('%s_tidy_counterparts.csv'%cluster_name)
+    return stars
     
 
-distances_from_match('IC348')
+print(tidy_counterparts('IC348',save=True))
     
 
