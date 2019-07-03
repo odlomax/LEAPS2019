@@ -62,8 +62,8 @@ def gaia_data_projected(stars):
 def del_files():
     import subprocess
     subprocess.call(['./delete_gaia_query_files.sh'])
-
-
+    
+    
 # Given a cluster name finds member stars and Gaia data from that region
 # Potentially save these datasets for analysis
 def find_gaia_region(cluster_name,save_member_list = False,save_gaia_region=False):
@@ -114,53 +114,80 @@ def distances_from_match(cluster_name,num_matches=1,save=False):
         stars = pd.concat([stars,temp],axis=1)       
     if save==True:
         stars.to_csv('%s_counterparts.csv'%cluster_name)       
-    return stars
+    return stars,gaia_stars.to_pandas()
    
     
+# Generate logarithmic histogram given data and number of bins
+def plot_loghist(x, bins):
+  hist, bins = np.histogram(x, bins=bins)
+  logbins = np.logspace(np.log10(bins[0]),np.log10(bins[-1]),len(bins))
+  plt.hist(x, bins=logbins)
+  plt.xscale('log')
+  
+
+# Plot the positions of stars and counterparts
+def plot_counterparts(data,gaia_data):
+    fig = plt.figure(figsize = (6,6))
+    plt.xlabel('ra (degrees)')
+    plt.ylabel('dec (degrees)')
+    plt.title('Catalogue stars and Gaia Counterparts')
+    plt.scatter(gaia_data.ra_2000,gaia_data.dec_2000,label='Gaia Stars',marker='+',s=5,color='lightgrey')
+    plt.scatter(data.mem_ra,data.mem_dec,label='Catalogue',s=20, facecolors='none', edgecolors='navy')
+    plt.scatter(data[data.good_match==True].ra_2000,data[data.good_match==True].dec_2000,label='Good Matches',marker='.',s=5,color='c')
+    plt.scatter(data[data.good_match==False].ra_2000,data[data.good_match==False].dec_2000,label='Poor Matches',marker='.',s=5,color='r')
+    plt.legend()
+    plt.show()
+
+
+# Plot histogram of distances between matches
+def plot_dist_hist(stars):
+    dist_to_plot = np.array(stars['distance_1']*60*60)
+    fig_1 = plt.figure()
+    plot_loghist(dist_to_plot,30)
+    plt.grid(axis='y', alpha=0.75)
+    plt.title('Seperation of Gaia and Catalogue Matches')
+    plt.xlabel('Distance Between Nearest Neighbours (arcsecs)')
+    plt.ylabel('Frequency')
+    plt.show()
+
+
 # Remove rows with matches of less than a certain angular displacement in arcseconds
 def tidy_counterparts(cluster_name,max_dist=1,num=1,save=False,distances_hist=False):
     max_dist=max_dist/(60*60)
-    stars=distances_from_match(cluster_name,num_matches=num)
+    stars,gaia_stars=distances_from_match(cluster_name,num_matches=num)
     (a,b)=stars.shape    
     empty_parallax = stars['parallax'].isnull()
+    stars['good_match']= np.ones((a),dtype=bool)
     
     for i in range(a):
-        if (stars.at[i,'distance_1']>max_dist) or (empty_parallax[i]==True) or (stars.at[i,'parallax']<0.1):
-            stars.drop([i],inplace=True)
-        
+        if (stars.at[i,'distance_1']>max_dist) | (empty_parallax[i]==True) | (stars.at[i,'parallax']<0.1):
+            stars.at[i,'good_match']=False
         else:
             gaia_id = stars.at[i,'source_id']
             dist = stars.at[i,'distance_1']
-            matches = stars.loc[(stars.desig != stars.at[i,'desig'])&(stars.source_id==gaia_id)]
+            matches = stars.loc[(stars.desig != stars.at[i,'desig'])&(stars.source_id==gaia_id)&stars.good_match==True]
             better_matches = matches.loc[matches.distance_1 <= dist]
             if len(better_matches)!=0:
-                stars.drop([i],inplace=True)
+                stars.at[i,'good_match']=False
         
-    stars.reset_index(inplace=True,drop=True)    
     if save==True:
-        stars.to_csv('%s_tidy_counterparts.csv'%cluster_name)
+        stars.to_csv('%s_tidy_counterparts.csv'%cluster_name)        
     if distances_hist==True:
-        dist_to_plot = np.array(stars['distance_1']*60*60)
-        fig_1 = plt.figure()
-        n, bins, patches = plt.hist(x=dist_to_plot, bins=30, color='#0504aa', alpha=0.7, rwidth=0.85)
-        plt.grid(axis='y', alpha=0.75)
-        plt.xlabel('Distance Between Nearest Neighbours (arcsecs)')
-        plt.ylabel('Frequency')
-        maxfreq = n.max()
-        plt.ylim(ymax=np.ceil(maxfreq / 10) * 10 if maxfreq % 10 else maxfreq + 10)
-
+        plot_dist_hist(stars)    
+    plot_counterparts(stars,gaia_stars)
     return stars
 
 
 def optimise_max_dist_matching(stars,max_dist=1):
     max_dist=max_dist/(60*60)
     (a,b)=stars.shape 
-    for i in range(a):
-        if (stars.at[i,'distance_1']>max_dist):
-            stars.drop([i],inplace=True)
-    stars.reset_index(inplace=True,drop=True)    
-    (a,b)=stars.shape
+    stars['good_match']= np.ones((a),dtype=bool)
     
+    for i in range(a):
+        if (stars.at[i,'distance_1']>max_dist) | (empty_parallax[i]==True) | (stars.at[i,'parallax']<0.1):
+            stars.at[i,'good_match']=False
+    
+    (a,b) = stars[stars.good_match==True].shape
     return a
 
 
@@ -200,11 +227,7 @@ def star_matching_criterion(cluster_name,max_dist=False,neighbors=False):
 
 
 # Takes in table of data on stars and gives out an array of euclidean coord.s in pc
-def euclidean_coordinates(data):
-    coord = data[['parallax','ra','dec']].values.T
-    r = [1/(coord[0]*0.001)]
-    phi = [coord[1]* np.pi/180]
-    theta = [coord[2]* np.pi/180]
+def change_to_cartesian(r,phi,theta):
     x = r*np.sin(theta)*np.cos(phi)
     y = r*np.sin(theta)*np.sin(phi)
     z = r*np.cos(theta)
@@ -213,25 +236,62 @@ def euclidean_coordinates(data):
     z = z - np.mean(z)
     result = np.concatenate((x,y,z),axis=0)
     return result
+    
+
+# Takes in table of data on stars and gives out euclidean coord.s in pc
+# Optionally also returns the standard deviation of star distances
+def euclidean_coordinates(data,errors=False):
+    mean,st_dev,p,distances = mean_st_dev(data)
+    coord = data[['ra','dec']].values.T
+    r = np.array(mean).T
+    phi = np.array([coord[0]* np.pi/180])
+    theta = np.array([coord[1]* np.pi/180])
+    result = change_to_cartesian(r,phi,theta)
+    if errors==False:
+        return result
+    if errors==True:
+        return result,st_dev
 
 
 # Generate a 3d plot of given cartesian coordinates - input must be an array with three rows
-def three_d_plot(coord,animate=False):
-    from matplotlib.animation import FuncAnimation
+def three_d_plot(coord,animate=False,aspect=None,errors=int(0)):
     from mpl_toolkits.mplot3d import Axes3D
+    from matplotlib.animation import FuncAnimation
+    import matplotlib.cm as cm
+    
+    print(type(errors))
+
     fig = plt.figure(figsize=(6,6))
-    ax = Axes3D(fig)    
-    def update_view(i):    
-        ax.scatter(coord[0],coord[1],coord[2],'bo')
+    ax = Axes3D(fig)
+    if aspect=='equal':
+        max_range = np.array([coord[0].max()-coord[0].min(), coord[1].max()-coord[1].min(), coord[2].max()-coord[2].min()]).max()
+        Xb = 0.5*max_range*np.mgrid[-1:2:2,-1:2:2,-1:2:2][0].flatten() + 0.5*(coord[0].max()+coord[0].min())
+        Yb = 0.5*max_range*np.mgrid[-1:2:2,-1:2:2,-1:2:2][1].flatten() + 0.5*(coord[1].max()+coord[1].min())
+        Zb = 0.5*max_range*np.mgrid[-1:2:2,-1:2:2,-1:2:2][2].flatten() + 0.5*(coord[2].max()+coord[2].min())
+        for xb, yb, zb in zip(Xb, Yb, Zb):
+            ax.plot([xb], [yb], [zb], 'w')
+    
+    
+    def update_view(i): 
+        if type(errors)!='int':
+            ax.scatter(coord[0],coord[1],coord[2],c=errors.ravel(),cmap=cm.plasma_r)
+        else:
+            ax.scatter(coord[0],coord[1],coord[2])
         ax.view_init(elev=10., azim=i)
-        return ax        
+        return ax
+    
     if animate==True:
         ani = FuncAnimation(fig, update_view,frames=360)
+        
     else:
-        ax.scatter(coord[0],coord[1],coord[2])
-        ax.set_xlabel('x (pc)')
-        ax.set_ylabel('y (pc)')
-        ax.set_zlabel('z (pc)')
+        if type(errors)!='int':
+            ax.scatter(coord[0],coord[1],coord[2],c=errors.ravel(),cmap=cm.plasma_r)
+        else:
+            ax.scatter(coord[0],coord[1],coord[2])
+    ax.set_xlabel('x (pc)')
+    ax.set_ylabel('y (pc)')
+    ax.set_zlabel('z (pc)')
+
     plt.show()
 
 
@@ -268,24 +328,23 @@ def mean_st_dev(data,distances=np.linspace(100.,900.,1000)):
     rho=np.zeros((a,c))
     for i in range(a):
         rho[i]=distances
-    pi_prime=np.array(stars['parallax']*10**-3)
+    pi_prime=np.array(data['parallax']*10**-3)
     pi_prime=pi_prime.reshape((a,1))
-    sigma_pi=np.array(stars['parallax_error']*10**-3)
+    sigma_pi=np.array(data['parallax_error']*10**-3)
     sigma_pi=sigma_pi.reshape((a,1))
     res_1,res_2,res_3 = posterior(rho_likelihood,rho,pi_prime,sigma_pi)
     return res_1,res_2,res_3,distances
 
 
 # Generates a histogram of the standard deviations in distance given data with parallaxes
-def hist_st_dev(data):
-    mean,st_dev,p,distances = mean_st_dev(stars)    
+def cluster_distances_st_dev(data_input):
+    mean,st_dev,p,distances = mean_st_dev(data_input)    
     fig_1 = plt.figure()
-    n, bins, patches = plt.hist(x=st_dev, bins=30, color='#0504aa', alpha=0.7, rwidth=0.85)
+    plot_loghist(st_dev, 30)
     plt.grid(axis='y', alpha=0.75)
+    plt.title('Errors in Star Positions')
     plt.xlabel('Standard Deviation of Distance (pc)')
     plt.ylabel('Frequency')
-    maxfreq = n.max()
-    plt.ylim(ymax=np.ceil(maxfreq / 10) * 10 if maxfreq % 10 else maxfreq + 10)
     
     stacked = p.sum(axis=0)
     stacked/=np.trapz(stacked,distances)
@@ -296,21 +355,17 @@ def hist_st_dev(data):
     fig_2 = plt.figure(figsize=(6,6))
     plt.xlabel('Distance (pc)')
     plt.ylabel('Probability Distribution Function')
+    plt.title('Stacked pdfs of Star Positions')
     plt.plot(distances,stacked)
     plt.show()
 
 
+
+
 stars= tidy_counterparts('IC348',distances_hist=True)
 '''
-coord= euclidean_coordinates(stars)
-three_d_plot(coord)
+cluster_distances_st_dev(stars[stars.good_match==True])
 '''
-#hist_st_dev(stars)
+coord,st_dev= euclidean_coordinates(stars[stars.good_match==True],errors=True)
+three_d_plot(coord,errors=st_dev)
 
-
-
-
-
-#print(result)
-
-#print(1/np.array(stars['parallax']))
