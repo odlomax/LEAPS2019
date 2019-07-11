@@ -71,7 +71,7 @@ def find_gaia_region(cluster_name,save_member_list = False,save_gaia_region=Fals
     gaia_stars = gaia_data_projected(stars)
     if save_gaia_region==True:
         df = gaia_stars.to_pandas()
-        df.to_csv('%s_Region_Gaia_Data.fits'%cluster_name)
+        df.to_csv('%s_Region_Gaia_Data.csv'%cluster_name)
     if save_member_list==True:
         stars.to_csv('%s_Member_List.csv'%cluster_name)
     del_files()
@@ -116,14 +116,6 @@ def distances_from_match(cluster_name,num_matches=1,save=False):
         stars.to_csv('%s_counterparts.csv'%cluster_name)       
     return stars,gaia_stars.to_pandas()
    
-    
-# Generate logarithmic histogram given data and number of bins
-def plot_loghist(x, bins):
-  hist, bins = np.histogram(x, bins=bins)
-  logbins = np.logspace(np.log10(bins[0]),np.log10(bins[-1]),len(bins))
-  plt.hist(x, bins=logbins)
-  plt.xscale('log')
-  
 
 # Plot the positions of stars and counterparts
 def plot_counterparts(data,gaia_data):
@@ -133,8 +125,8 @@ def plot_counterparts(data,gaia_data):
     plt.title('Catalogue stars and Gaia Counterparts')
     plt.scatter(gaia_data.ra_2000,gaia_data.dec_2000,label='Gaia Stars',marker='+',s=5,color='lightgrey')
     plt.scatter(data.mem_ra,data.mem_dec,label='Catalogue',s=20, facecolors='none', edgecolors='navy')
-    plt.scatter(data[data.good_match==True].ra_2000,data[data.good_match==True].dec_2000,label='Good Matches',marker='.',s=5,color='c')
-    plt.scatter(data[data.good_match==False].ra_2000,data[data.good_match==False].dec_2000,label='Poor Matches',marker='.',s=5,color='r')
+    plt.scatter(data[data.good_match==True].ra_2000,data[data.good_match==True].dec_2000,label='Acceptable Matches',marker='.',s=5,color='c')
+    plt.scatter(data[data.good_match==False].ra_2000,data[data.good_match==False].dec_2000,label='Unacceptable Matches',marker='.',s=5,color='r')
     plt.legend()
     plt.show()
 
@@ -142,17 +134,23 @@ def plot_counterparts(data,gaia_data):
 # Plot histogram of distances between matches
 def plot_dist_hist(stars):
     dist_to_plot = np.array(stars['distance_1']*60*60)
+    good_matches = np.array(stars[stars.good_match==True]['distance_1']*60*60)
     fig_1 = plt.figure()
-    plot_loghist(dist_to_plot,30)
+    hist, bins = np.histogram(dist_to_plot, bins=30)
+    logbins = np.logspace(np.log10(bins[0]),np.log10(bins[-1]),len(bins))
+    plt.hist(dist_to_plot, bins=logbins,label='all nearest neighbours',color='r')
+    plt.hist(good_matches, bins=logbins,label='with parallax and within 1arcsec',color='c')
+    plt.xscale('log')
     plt.grid(axis='y', alpha=0.75)
     plt.title('Seperation of Gaia and Catalogue Matches')
     plt.xlabel('Distance Between Nearest Neighbours (arcsecs)')
     plt.ylabel('Frequency')
+    plt.legend()
     plt.show()
 
 
 # Remove rows with matches of less than a certain angular displacement in arcseconds
-def tidy_counterparts(cluster_name,max_dist=1,num=1,save=False,distances_hist=False):
+def tidy_counterparts(cluster_name,max_dist=1,num=1,save=False,distances_hist=False,plot_matches=False):
     max_dist=max_dist/(60*60)
     stars,gaia_stars=distances_from_match(cluster_name,num_matches=num)
     (a,b)=stars.shape    
@@ -174,7 +172,8 @@ def tidy_counterparts(cluster_name,max_dist=1,num=1,save=False,distances_hist=Fa
         stars.to_csv('%s_tidy_counterparts.csv'%cluster_name)        
     if distances_hist==True:
         plot_dist_hist(stars)    
-    plot_counterparts(stars,gaia_stars)
+    if plot_matches==True:
+        plot_counterparts(stars,gaia_stars)
     return stars
 
 
@@ -227,40 +226,93 @@ def star_matching_criterion(cluster_name,max_dist=False,neighbors=False):
 
 
 # Takes in table of data on stars and gives out an array of euclidean coord.s in pc
-def change_to_cartesian(r,phi,theta):
-    x = r*np.sin(theta)*np.cos(phi)
-    y = r*np.sin(theta)*np.sin(phi)
-    z = r*np.cos(theta)
-    x = x - np.mean(x)
-    y = y - np.mean(y)
-    z = z - np.mean(z)
+def change_to_cartesian(ra,dec,dist,move_origin=True,plots=True):
+    from astropy.coordinates import Distance
+    from astropy import units as u
+    from astropy.coordinates import SkyCoord
+    coord=SkyCoord(ra=ra*u.degree, dec=dec*u.degree, distance=dist*u.pc)
+    x = coord.cartesian.x
+    y = coord.cartesian.y
+    z = coord.cartesian.z
+    if move_origin==True:
+        x = x - np.mean(x)
+        y = y - np.mean(y)
+        z = z - np.mean(z)
     result = np.concatenate((x,y,z),axis=0)
+    
+    if plots==True:
+    
+        fig_1 = plt.figure()
+        plt.scatter(y,z)
+        plt.axes().set_aspect('equal')
+        plt.title('Y-Z Cartesian Representation')
+        plt.xlabel('y(pc)')
+        plt.ylabel('z(pc)')
+    
+        fig_2 = plt.figure()
+        plt.scatter(y,x)
+        plt.axes().set_aspect('equal')
+        plt.title('Y-X Cartesian Representation')
+        plt.xlabel('y(pc)')
+        plt.ylabel('x(pc)')
+        
+        fig_3 = plt.figure()
+        plt.scatter(ra,dec)
+        plt.axes().set_aspect('equal')
+        plt.xlabel('ra(degrees)')
+        plt.ylabel('dec(degrees)')
+    
     return result
+
     
 
 # Takes in table of data on stars and gives out euclidean coord.s in pc
 # Optionally also returns the standard deviation of star distances
-def euclidean_coordinates(data,errors=False):
-    mean,st_dev,p,distances = mean_st_dev(data)
+def euclidean_coordinates(data,errors=False,type_errors='parsec',move_origin=True,random_sample=True,plots=True):
+    mean,st_dev,p,distances = mean_st_dev(data,random_sample=random_sample)
     coord = data[['ra','dec']].values.T
-    r = np.array(mean).T
-    phi = np.array([coord[0]* np.pi/180])
-    theta = np.array([coord[1]* np.pi/180])
-    result = change_to_cartesian(r,phi,theta)
+    dist = np.array(mean).T
+    ra = np.array([coord[0]])
+    dec = np.array([coord[1]])
+    result = change_to_cartesian(ra,dec,dist,move_origin=move_origin,plots=plots)
+    if plots==True:
+        ra_rel_error = np.absolute(data['ra_error']/data['ra'])
+        dec_rel_error = np.absolute(data['dec_error']/data['dec'])
+        
+        fig_1 = plt.figure()
+        hist, bins = np.histogram(ra_rel_error, bins=30)
+        logbins = np.logspace(np.log10(bins[0]),np.log10(bins[-1]),len(bins))
+        plt.hist(ra_rel_error, bins=logbins)
+        plt.xscale('log')
+        plt.grid(axis='y', alpha=0.75)
+        plt.title('Relative Error in Gaia RA Data')
+        plt.xlabel('RA Error / RA')
+        
+        fig_2 = plt.figure()
+        hist, bins = np.histogram(dec_rel_error, bins=30)
+        logbins = np.logspace(np.log10(bins[0]),np.log10(bins[-1]),len(bins))
+        plt.hist(dec_rel_error, bins=logbins)
+        plt.xscale('log')
+        plt.grid(axis='y', alpha=0.75)
+        plt.title('Relative Error in Gaia Dec Data')
+        plt.xlabel('Dec Error / Dec')
+ 
+    
+    plt.ylabel('Frequency')
     if errors==False:
         return result
     if errors==True:
-        return result,st_dev
-
+        if type_errors=='parallax':
+            return result,np.array(data['parallax_error']/data['parallax'])
+        else:
+            return result,st_dev
 
 # Generate a 3d plot of given cartesian coordinates - input must be an array with three rows
 def three_d_plot(coord,animate=False,aspect=None,errors=int(0)):
     from mpl_toolkits.mplot3d import Axes3D
     from matplotlib.animation import FuncAnimation
     import matplotlib.cm as cm
-    
-    print(type(errors))
-
+        
     fig = plt.figure(figsize=(6,6))
     ax = Axes3D(fig)
     if aspect=='equal':
@@ -269,12 +321,13 @@ def three_d_plot(coord,animate=False,aspect=None,errors=int(0)):
         Yb = 0.5*max_range*np.mgrid[-1:2:2,-1:2:2,-1:2:2][1].flatten() + 0.5*(coord[1].max()+coord[1].min())
         Zb = 0.5*max_range*np.mgrid[-1:2:2,-1:2:2,-1:2:2][2].flatten() + 0.5*(coord[2].max()+coord[2].min())
         for xb, yb, zb in zip(Xb, Yb, Zb):
-            ax.plot([xb], [yb], [zb], 'w')
-    
+            ax.plot([xb], [yb], [zb], 'w')    
     
     def update_view(i): 
         if type(errors)!='int':
-            ax.scatter(coord[0],coord[1],coord[2],c=errors.ravel(),cmap=cm.plasma_r)
+            sc= ax.scatter(coord[0],coord[1],coord[2],c=errors.ravel(),cmap=cm.plasma_r)
+            plt.colorbar(sc)
+
         else:
             ax.scatter(coord[0],coord[1],coord[2])
         ax.view_init(elev=10., azim=i)
@@ -285,14 +338,45 @@ def three_d_plot(coord,animate=False,aspect=None,errors=int(0)):
         
     else:
         if type(errors)!='int':
-            ax.scatter(coord[0],coord[1],coord[2],c=errors.ravel(),cmap=cm.plasma_r)
+            sc=ax.scatter(coord[0],coord[1],coord[2],c=errors.ravel(),cmap=cm.plasma_r)
+            plt.colorbar(sc)
         else:
             ax.scatter(coord[0],coord[1],coord[2])
     ax.set_xlabel('x (pc)')
     ax.set_ylabel('y (pc)')
     ax.set_zlabel('z (pc)')
+    plt.title('Stellar Positions with Relative Parallax Errors')
 
     plt.show()
+    
+    
+def rho_prior(rho,mu_rho,sigma_rho):
+    
+    """
+    
+    Function: return prior probaility density of rho
+    
+    Arguments:
+    
+        rho: float
+            array of rho values
+            
+        mu_rho: float
+            mean value of rho
+            
+        sigma_rho: float
+            standard deviation of rho
+            
+    Result:
+    
+        p: float
+            prior distribution of rho
+    
+    """
+    
+    p=np.exp(-(rho-mu_rho)**2/(2*sigma_rho**2))/(sigma_rho*np.sqrt(2*np.pi))
+    
+    return p
 
 
 # Return likelihood of measured parallax given rho 
@@ -301,8 +385,26 @@ def rho_likelihood(rho,pi_prime,sigma_pi):
     return p
 
 
+def cumulative_dist(f_x,x):
+    F_x=np.zeros(f_x.shape,dtype=np.float)  
+    # compute trapezoidal cumulative distribution 
+    F_x[:,1:]=np.cumsum(0.5*(f_x[:,1:]+f_x[:,:-1])*(x[:,1:]-x[:,:-1]),axis=1)
+    return F_x
+
+def pdf_random(f_x,x,n,a):
+    F_x=cumulative_dist(f_x,x)
+
+    R=np.random.random((a,n))
+    # invert (by linear interpolation) F_x to get X
+    X = np.zeros((a,n))
+    for i in range(a):
+        X[i,:]=np.array(np.interp(R[i],F_x[i],x[i])).reshape(1,n)[:]
+    return X
+
+
 # Finds mean and st_dev of distance for each row (star) parallax. Calculates posterior pdf
-def posterior(likelihood,rho,pi_prime,sigma_pi,prior=None,plot=False):
+# Randomly samples a point from each star's pdf (this is incorrectly still refered to as 'mean')
+def posterior(likelihood,rho,pi_prime,sigma_pi,prior=None,random_sample=True):
     # set posterior values
     p=likelihood(rho,pi_prime,sigma_pi)
     (a,b)=p.shape
@@ -312,17 +414,21 @@ def posterior(likelihood,rho,pi_prime,sigma_pi,prior=None,plot=False):
     # normalise p
     for i in range(a):
         p[i]/=np.trapz(p[i],rho[i])
-    
-    mean=(rho*p).sum(axis=1)/p.sum(axis=1)
+
+    if random_sample==True:
+        Rho=pdf_random(p,rho,1,a)
+        mean=Rho.mean(axis=1)
+    else:
+        mean=(rho*p).sum(axis=1)/p.sum(axis=1)
+        mean=mean.reshape(a,1)
     mean=mean.reshape(a,1)
     st_dev=np.sqrt((p*(rho-mean)**2).sum(axis=1)/p.sum(axis=1))
     st_dev=st_dev.reshape(a,1)
-
     return mean,st_dev,p
 
 
 # Given dataset and target distances in parsec, returns mean & st_dev of the distances calculated from parallax
-def mean_st_dev(data,distances=np.linspace(100.,900.,1000)):
+def mean_st_dev(data,distances=np.linspace(100.,900.,1000),random_sample=True):
     (a,b)=data.shape
     (c,)=distances.shape
     rho=np.zeros((a,c))
@@ -332,17 +438,33 @@ def mean_st_dev(data,distances=np.linspace(100.,900.,1000)):
     pi_prime=pi_prime.reshape((a,1))
     sigma_pi=np.array(data['parallax_error']*10**-3)
     sigma_pi=sigma_pi.reshape((a,1))
-    res_1,res_2,res_3 = posterior(rho_likelihood,rho,pi_prime,sigma_pi)
+    res_1,res_2,res_3 = posterior(rho_likelihood,rho,pi_prime,sigma_pi,random_sample=random_sample)
     return res_1,res_2,res_3,distances
 
 
 # Generates a histogram of the standard deviations in distance given data with parallaxes
-def cluster_distances_st_dev(data_input):
-    mean,st_dev,p,distances = mean_st_dev(data_input)    
+def cluster_distances_st_dev(data_input,random_sample=True):
+    
+    mean,st_dev,p,distances = mean_st_dev(data_input,random_sample=random_sample)
+    parallax_err =np.array(data_input['parallax_error']/data_input['parallax'])
+    
     fig_1 = plt.figure()
-    plot_loghist(st_dev, 30)
+    hist, bins = np.histogram(parallax_err, bins=30)
+    logbins = np.logspace(np.log10(bins[0]),np.log10(bins[-1]),len(bins))
+    plt.hist(parallax_err, bins=logbins)
+    plt.xscale('log')
     plt.grid(axis='y', alpha=0.75)
-    plt.title('Errors in Star Positions')
+    plt.title('Relative Error in Gaia Parallax Data')
+    plt.xlabel('Parallax Error / Parallax')
+    plt.ylabel('Frequency')
+
+    fig_2 = plt.figure()
+    hist, bins = np.histogram(st_dev, bins=30)
+    logbins = np.logspace(np.log10(bins[0]),np.log10(bins[-1]),len(bins))
+    plt.hist(st_dev, bins=logbins)
+    plt.xscale('log')
+    plt.grid(axis='y', alpha=0.75)
+    plt.title('Errors in Star Distances')
     plt.xlabel('Standard Deviation of Distance (pc)')
     plt.ylabel('Frequency')
     
@@ -352,20 +474,10 @@ def cluster_distances_st_dev(data_input):
     stack_st_dev=np.sqrt((stacked*(distances-stack_mean)**2).sum()/stacked.sum())
     print('stack mean=', stack_mean, ' stack st_dev=', stack_st_dev)
 
-    fig_2 = plt.figure(figsize=(6,6))
+    fig_3 = plt.figure(figsize=(6,6))
     plt.xlabel('Distance (pc)')
     plt.ylabel('Probability Distribution Function')
     plt.title('Stacked pdfs of Star Positions')
     plt.plot(distances,stacked)
     plt.show()
-
-
-
-
-stars= tidy_counterparts('IC348',distances_hist=True)
-'''
-cluster_distances_st_dev(stars[stars.good_match==True])
-'''
-coord,st_dev= euclidean_coordinates(stars[stars.good_match==True],errors=True)
-three_d_plot(coord,errors=st_dev)
 
