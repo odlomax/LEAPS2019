@@ -275,6 +275,7 @@ def euclidean_coordinates(data,errors=False,type_errors='parsec',move_origin=Tru
     ra = np.array([coord[0]])
     dec = np.array([coord[1]])
     result = change_to_cartesian(ra,dec,dist,move_origin=move_origin,plots=plots)
+    
     if plots==True:
         ra_rel_error = np.absolute(data['ra_error']/data['ra'])
         dec_rel_error = np.absolute(data['dec_error']/data['dec'])
@@ -287,6 +288,7 @@ def euclidean_coordinates(data,errors=False,type_errors='parsec',move_origin=Tru
         plt.grid(axis='y', alpha=0.75)
         plt.title('Relative Error in Gaia RA Data')
         plt.xlabel('RA Error / RA')
+        plt.ylabel('Frequency')
         
         fig_2 = plt.figure()
         hist, bins = np.histogram(dec_rel_error, bins=30)
@@ -295,10 +297,8 @@ def euclidean_coordinates(data,errors=False,type_errors='parsec',move_origin=Tru
         plt.xscale('log')
         plt.grid(axis='y', alpha=0.75)
         plt.title('Relative Error in Gaia Dec Data')
-        plt.xlabel('Dec Error / Dec')
- 
-    
-    plt.ylabel('Frequency')
+        plt.xlabel('Dec Error / Dec')   
+        plt.ylabel('Frequency')
     if errors==False:
         return result
     if errors==True:
@@ -310,7 +310,7 @@ def euclidean_coordinates(data,errors=False,type_errors='parsec',move_origin=Tru
 # Generate a 3d plot of given cartesian coordinates - input must be an array with three rows
 def three_d_plot(coord,animate=False,aspect=None,errors=int(0)):
     from mpl_toolkits.mplot3d import Axes3D
-    from matplotlib.animation import FuncAnimation
+    from matplotlib.animation import FuncAnimation, PillowWriter
     import matplotlib.cm as cm
         
     fig = plt.figure(figsize=(6,6))
@@ -321,20 +321,25 @@ def three_d_plot(coord,animate=False,aspect=None,errors=int(0)):
         Yb = 0.5*max_range*np.mgrid[-1:2:2,-1:2:2,-1:2:2][1].flatten() + 0.5*(coord[1].max()+coord[1].min())
         Zb = 0.5*max_range*np.mgrid[-1:2:2,-1:2:2,-1:2:2][2].flatten() + 0.5*(coord[2].max()+coord[2].min())
         for xb, yb, zb in zip(Xb, Yb, Zb):
-            ax.plot([xb], [yb], [zb], 'w')    
-    
-    def update_view(i): 
-        if type(errors)!='int':
-            sc= ax.scatter(coord[0],coord[1],coord[2],c=errors.ravel(),cmap=cm.plasma_r)
-            plt.colorbar(sc)
-
-        else:
-            ax.scatter(coord[0],coord[1],coord[2])
-        ax.view_init(elev=10., azim=i)
+            ax.plot([xb], [yb], [zb], 'w')  
+            
+    def init():
+        ax.scatter(coord[0],coord[1],coord[2],c='b')
+        ax.set_xlabel('x (pc)')
+        ax.set_ylabel('y (pc)')
+        ax.set_zlabel('z (pc)')
+        ax.view_init(elev=10., azim=0)
+        plt.title('Stellar Positions')
         return ax
+
+    def update_view(i): 
+        ax.scatter(coord[0],coord[1],coord[2],c='b')
+        ax.view_init(elev=10., azim=i)
+        return fig
     
     if animate==True:
-        ani = FuncAnimation(fig, update_view,frames=360)
+        ani = FuncAnimation(fig,update_view,frames=359,blit=False,init_func=init)
+        ani.save('cluster_animation.gif', writer=PillowWriter(fps=24))
         
     else:
         if type(errors)!='int':
@@ -345,37 +350,17 @@ def three_d_plot(coord,animate=False,aspect=None,errors=int(0)):
     ax.set_xlabel('x (pc)')
     ax.set_ylabel('y (pc)')
     ax.set_zlabel('z (pc)')
-    plt.title('Stellar Positions with Relative Parallax Errors')
+    if type(errors)!='int':
+        plt.title('Stellar Positions')
+    else:
+        plt.title('Stellar Positions with Relative Parallax Errors')
 
     plt.show()
     
-    
+
+# return prior probaility density of rho
 def rho_prior(rho,mu_rho,sigma_rho):
-    
-    """
-    
-    Function: return prior probaility density of rho
-    
-    Arguments:
-    
-        rho: float
-            array of rho values
-            
-        mu_rho: float
-            mean value of rho
-            
-        sigma_rho: float
-            standard deviation of rho
-            
-    Result:
-    
-        p: float
-            prior distribution of rho
-    
-    """
-    
-    p=np.exp(-(rho-mu_rho)**2/(2*sigma_rho**2))/(sigma_rho*np.sqrt(2*np.pi))
-    
+    p=np.exp(-(rho-mu_rho)**2/(2*sigma_rho**2))/(sigma_rho*np.sqrt(2*np.pi))    
     return p
 
 
@@ -385,12 +370,15 @@ def rho_likelihood(rho,pi_prime,sigma_pi):
     return p
 
 
+# Return integral of f_x up to x
 def cumulative_dist(f_x,x):
     F_x=np.zeros(f_x.shape,dtype=np.float)  
     # compute trapezoidal cumulative distribution 
     F_x[:,1:]=np.cumsum(0.5*(f_x[:,1:]+f_x[:,:-1])*(x[:,1:]-x[:,:-1]),axis=1)
     return F_x
 
+
+# Samples random points from the pdf f_x on the domain x
 def pdf_random(f_x,x,n,a):
     F_x=cumulative_dist(f_x,x)
 
@@ -480,4 +468,8 @@ def cluster_distances_st_dev(data_input,random_sample=True):
     plt.title('Stacked pdfs of Star Positions')
     plt.plot(distances,stacked)
     plt.show()
+
+
+# Randomly sample points from pdf of position
+
 
