@@ -41,5 +41,5 @@ class model_3d3d_params:
     gauss_filter=False
     L_range=(0.0005,0.005)
     H_range=(0.,1.)
-    sigma_range=(0.5,4.5)
+    sigma_range=(1.5,6.0)
     
