@@ -1,6 +1,8 @@
 import sort_memberships as sm
 import orion_sort_memberships as osm
 import analysis as an
+import taurus_sort_memberships
+
 
 import pandas as pd
 import numpy as np
