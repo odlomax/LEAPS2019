@@ -37,12 +37,12 @@ sm.cluster_distances_st_dev(stars)
 # Finds IC348 data and plots it in 3D
 # Takes the Gaia stars in the region which are 'good_match'es
 # Generates a histogram of the standard deviations in distance given data with parallaxes
-
+'''
 stars= sm.tidy_counterparts('IC348',distances_hist=True,plot_matches=True)
 coord,st_dev= sm.euclidean_coordinates(stars[stars.good_match==True],type_errors='parallax',errors=True)
 sm.three_d_plot(coord,aspect='equal',animate=False)
 sm.cluster_distances_st_dev(stars[stars.good_match==True])
-
+'''
 
 
 # Create a synthetic cluster with given number of stars, H, sigma
