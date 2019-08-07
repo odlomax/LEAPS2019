@@ -146,7 +146,8 @@ def monte_carlo_analysis(stars,num=1,seed=None,plots=True,random=False,trim=Fals
         fig_3,ax3=plt.subplots(figsize=(6.,6.))
         
         ellipse_list2=[]
-        
+        ax3.scatter(result['H_est'],result['sigma_est'],s=2)
+       
         for i in range(num):
             ellipse=Ellipse((result.iloc[i]['H_est'],result.iloc[i]['sigma_est']),ell_size2[0],ell_size2[1],ell_angle2,color='k')
             ellipse.set_alpha(0.025)
@@ -154,7 +155,6 @@ def monte_carlo_analysis(stars,num=1,seed=None,plots=True,random=False,trim=Fals
             ax3.add_artist(ellipse_list2[i])
 
         ax3.scatter(mean_H,mean_sigma,s=7,c='r')
-        ax3.scatter(result['H_est'],result['sigma_est'],s=2)
         ax3.add_artist(ell3)
         ax3.set_xlim(0,1.1)
         ax3.set_ylim(0.5,5.0)
@@ -241,37 +241,53 @@ def plot_errors(H1,sigma1,covar_dist_1,covar_est_1,H2,sigma2,covar_dist_2,covar_
     
 
 # Plot uncertainty ellipses for three clusters
-def plot_errors_three(H1,sigma1,covar_dist_1,covar_est_1,H2,sigma2,covar_dist_2,covar_est_2,H3,sigma3,covar_dist_3,covar_est_3):
+# clusters=True gives labels as names of clusters, False gives comparison of sampling for rho oph
+def plot_errors_three(H1,sigma1,covar_dist_1,covar_est_1,H2,sigma2,covar_dist_2,covar_est_2,H3,sigma3,covar_dist_3,covar_est_3,clusters=True):
     from matplotlib.patches import Ellipse
 
     fig_2,ax=plt.subplots(figsize=(6.,6.))
 
     w,v=np.linalg.eig(covar_dist_1+covar_est_1)
     ell_size=2.*np.sqrt(w)
-    ell_angle=np.arctan2(v[1,0],v[0,0])*180./np.pi    
-    ell=Ellipse((H1,sigma1),ell_size[0],ell_size[1],ell_angle,edgecolor='b', fc='b', lw=2)
+    ell_angle=np.arctan2(v[1,0],v[0,0])*180./np.pi 
+    if clusters==True:
+        ell=Ellipse((H1,sigma1),ell_size[0],ell_size[1],ell_angle)
+    else:
+        ell=Ellipse((H1,sigma1),ell_size[0],ell_size[1],ell_angle,edgecolor='b', fc='b', lw=2)
     ell.set_alpha(0.3)
     
     
     y,z=np.linalg.eig(covar_dist_2+covar_est_2)
     ell_size2=2.*np.sqrt(y)
-    ell_angle2=np.arctan2(z[1,0],z[0,0])*180./np.pi    
-    ell2=Ellipse((H2,sigma2),ell_size2[0],ell_size2[1],ell_angle2,edgecolor='g', fc='g', lw=2)
+    ell_angle2=np.arctan2(z[1,0],z[0,0])*180./np.pi  
+    if clusters==True:
+        ell2=Ellipse((H2,sigma2),ell_size2[0],ell_size2[1],ell_angle2)
+    else:
+        ell2=Ellipse((H2,sigma2),ell_size2[0],ell_size2[1],ell_angle2,edgecolor='g', fc='g', lw=2)
     ell2.set_alpha(0.3)
     
     a,b=np.linalg.eig(covar_dist_3+covar_est_3)
     ell_size3=2.*np.sqrt(a)
-    ell_angle3=np.arctan2(b[1,0],b[0,0])*180./np.pi    
-    ell3=Ellipse((H3,sigma3),ell_size3[0],ell_size3[1],ell_angle3,edgecolor='r', fc='r', lw=2)
+    ell_angle3=np.arctan2(b[1,0],b[0,0])*180./np.pi
+    if clusters==True:
+        ell3=Ellipse((H3,sigma3),ell_size3[0],ell_size3[1],ell_angle3)
+    else:
+        ell3=Ellipse((H3,sigma3),ell_size3[0],ell_size3[1],ell_angle3,edgecolor='r', fc='r', lw=2)
     ell3.set_alpha(0.3)
 
     ax.add_artist(ell3) 
     ax.add_artist(ell2) 
     ax.add_artist(ell)
     #ax.text(H1,sigma1,'Orion A',ha="center",va="center",bbox=bbox_props)
-    ax.text(H2-0.5,sigma2,'yyy',ha="center",va="center",bbox=dict(facecolor='green', alpha=1.0))
-    ax.text(H3,sigma3-1,'98%',ha="center",va="center",bbox=dict(facecolor='red', alpha=1.0))
-    ax.text(H1+0.5,sigma1,'Full',ha="center",va="center",bbox=dict(facecolor='blue', alpha=1.0))
+    if clusters==True:
+        ax.text(H1,sigma1,'Orion A',ha="center",va="center")
+        ax.text(H2,sigma2,'Taurus',ha="center",va="center")
+        ax.text(H3,sigma3,'Rho Oph',ha="center",va="center")
+        
+    else:
+        ax.text(H1,sigma1,'98%',ha="center",va="center",bbox=dict(facecolor='blue', alpha=0.5))
+        ax.text(H2,sigma2,'yyy',ha="center",va="center",bbox=dict(facecolor='green', alpha=0.5))
+        ax.text(H3,sigma3,'full',ha="center",va="center",bbox=dict(facecolor='red', alpha=0.5))
 
 
     ax.set_xlim(0,1.1)

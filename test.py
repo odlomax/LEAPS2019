@@ -1,8 +1,7 @@
 import sort_memberships as sm
 import orion_sort_memberships as osm
 import analysis as an
-import taurus_sort_memberships
-
+import taurus_sort_memberships as tsm
 
 import pandas as pd
 import numpy as np
@@ -11,8 +10,9 @@ import matplotlib.pyplot as plt
 
 # Reads in Taurus data and removes members with no parallax data / very big or small parallaxes
 '''
-stars_new=taurus_tidy_counterparts(save=True)
-tidy(stars_new,save=True)
+stars_new=tsm.taurus_tidy_counterparts(save=True)
+tsm.tidy(stars_new,save=True)
+print(stars_new)
 '''
 
 
@@ -66,7 +66,7 @@ coord=whitened_coord(sample,animate=False)
 '''
 stars= pd.read_csv('rhoOph.csv')
 stars_trimmed=stars[stars.doh == "YYY"]
-monte_carlo_analysis(stars,num=200,random=True,plots=True,trim=True)
+an.monte_carlo_analysis(stars,num=10,random=True,plots=True,trim=True)
 '''
 
 
@@ -74,16 +74,16 @@ monte_carlo_analysis(stars,num=200,random=True,plots=True,trim=True)
 '''
 stars_1= pd.read_csv('rhoOph.csv')
 stars_trimmed=stars_1[stars_1.doh == "YYY"]
-H3,sigma3, covar3, estimator_covar3 = monte_carlo_analysis(stars_trimmed,num=200,random=True,plots=False,trim=True)
+H3,sigma3, covar3, estimator_covar3 = monte_carlo_analysis(stars_trimmed,num=10,random=True,plots=False,trim=True)
 
 stars_new= pd.read_csv('taurus_tidy.csv')
-H2,sigma2, covar2, estimator_covar2 = monte_carlo_analysis(stars_new,num=200,random=False,plots=False,trim=True)
+H2,sigma2, covar2, estimator_covar2 = monte_carlo_analysis(stars_new,num=10,random=False,plots=False,trim=True)
 
 stars= pd.read_csv('Orion_Gaia_Data.csv')
-H1,sigma1, covar1, estimator_covar1 = monte_carlo_analysis(stars,num=200,random=True,plots=True,trim=False)
+H1,sigma1, covar1, estimator_covar1 = monte_carlo_analysis(stars,num=10,random=True,plots=True,trim=False)
 
 plot_errors(H1,sigma1,covar1, estimator_covar1,H2,sigma2,covar2, estimator_covar2)
-plot_errors_three(H1,sigma1,covar1, estimator_covar1,H2,sigma2,covar2, estimator_covar2,H3,sigma3, covar3, estimator_covar3)
+plot_errors_three(H1,sigma1,covar1, estimator_covar1,H2,sigma2,covar2, estimator_covar2,H3,sigma3, covar3, estimator_covar3,clusters=True)
 '''
 
 
@@ -92,13 +92,13 @@ plot_errors_three(H1,sigma1,covar1, estimator_covar1,H2,sigma2,covar2, estimator
 stars_1= pd.read_csv('rhoOph.csv')
 
 stars_new= stars_1[stars_1.doh == "YYY"]
-H2,sigma2, covar2, estimator_covar2 = monte_carlo_analysis(stars_new,num=200,random=True,plots=False,trim=False)
+H2,sigma2, covar2, estimator_covar2 = an.monte_carlo_analysis(stars_new,num=10,random=True,plots=False,trim=False)
 
-H1,sigma1, covar1, estimator_covar1 = monte_carlo_analysis(stars_1,num=200,random=True,plots=False,trim=True)
+H1,sigma1, covar1, estimator_covar1 = an.monte_carlo_analysis(stars_1,num=10,random=True,plots=False,trim=True)
 
-H3,sigma3, covar3, estimator_covar3 = monte_carlo_analysis(stars_1,num=200,random=True,plots=False,trim=False)
+H3,sigma3, covar3, estimator_covar3 = an.monte_carlo_analysis(stars_1,num=10,random=True,plots=False,trim=False)
 
-plot_errors_three(H1,sigma1,covar1, estimator_covar1,H2,sigma2,covar2, estimator_covar2,H3,sigma3, covar3, estimator_covar3)
+an.plot_errors_three(H1,sigma1,covar1, estimator_covar1,H2,sigma2,covar2, estimator_covar2,H3,sigma3, covar3, estimator_covar3,clusters=False)
 '''
 
 
